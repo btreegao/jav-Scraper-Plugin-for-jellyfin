@@ -56,15 +56,11 @@ public class ConfigurationPageTests
         var pluginSource = ReadPluginFile("Plugin.cs");
         var controllerPagePattern = new Regex(
             """
-            new\s+PluginPageInfo\b
-            (?=
-                (?:(?!new\s+PluginPageInfo\b|\]\s*;)[\s\S])*
-                \bName\s*=\s*"NumberCoverConfigJs"
-            )
-            (?=
-                (?:(?!new\s+PluginPageInfo\b|\]\s*;)[\s\S])*
-                Configuration\.configPage\.js
-            )
+            new\s+PluginPageInfo\s*
+            \{\s*
+            Name\s*=\s*"NumberCoverConfigJs",\s*
+            EmbeddedResourcePath\s*=\s*\$"[^"\r\n]*Configuration\.configPage\.js",?\s*
+            \}
             """,
             RegexOptions.CultureInvariant | RegexOptions.IgnorePatternWhitespace);
 
