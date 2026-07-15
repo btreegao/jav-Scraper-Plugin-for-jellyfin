@@ -1,5 +1,5 @@
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using System.Xml.Linq;
 using Xunit;
 
@@ -7,28 +7,6 @@ namespace Jellyfin.Plugin.NumberCover.Tests;
 
 public class ConfigurationPageTests
 {
-    private static readonly Regex CSharpCommentOrLiteral = new(
-        """
-        "(?:\\.|[^"\\])*"
-        |
-        '(?:\\.|[^'\\])*'
-        |
-        (?<comment>//[^\r\n]*|/\*[\s\S]*?\*/)
-        """,
-        RegexOptions.CultureInvariant | RegexOptions.IgnorePatternWhitespace);
-
-    private static readonly Regex ExplicitIfFalseDirective = new(
-        @"^\s*#\s*if\s+false\s*$",
-        RegexOptions.CultureInvariant);
-
-    private static readonly Regex IfDirective = new(
-        @"^\s*#\s*if\b",
-        RegexOptions.CultureInvariant);
-
-    private static readonly Regex EndIfDirective = new(
-        @"^\s*#\s*endif\b",
-        RegexOptions.CultureInvariant);
-
     [Fact]
     public void Page_uses_the_embedded_external_controller()
     {
@@ -76,41 +54,22 @@ public class ConfigurationPageTests
     [Fact]
     public void Plugin_registers_the_controller_resource()
     {
-        var pluginSource = ReadPluginFile("Plugin.cs");
-        var controllerPagePattern = new Regex(
-            """
-            new\s+PluginPageInfo\s*
-            \{\s*
-            Name\s*=\s*"NumberCoverConfigJs",\s*
-            EmbeddedResourcePath\s*=\s*\$"[^"\r\n]*Configuration\.configPage\.js",?\s*
-            \}
-            """,
-            RegexOptions.CultureInvariant | RegexOptions.IgnorePatternWhitespace);
+        LoadJellyfinCommonAssembly();
+        var controllerPage = Assert.Single(
+            GetPluginPages(),
+            page => page.Name == "NumberCoverConfigJs");
 
-        var intendedRegistration =
-            """
-            new PluginPageInfo
-            {
-                Name = "NumberCoverConfigJs",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.js",
-            }
-            """;
-        var blockCommentedRegistration = $"/*{Environment.NewLine}{intendedRegistration}{Environment.NewLine}*/";
-        var lineCommentedRegistration = $"// {intendedRegistration.ReplaceLineEndings(" ")}";
-        var inactiveRegistration =
-            $$"""
-            #if false
-            #if FEATURE_FLAG
-            #endif
-            {{intendedRegistration}}
-            #endif
-            """;
+        Assert.Equal(
+            "Jellyfin.Plugin.NumberCover.Configuration.configPage.js",
+            controllerPage.EmbeddedResourcePath);
 
-        Assert.Matches(controllerPagePattern, SanitizeActiveCSharpSource(intendedRegistration));
-        Assert.DoesNotMatch(controllerPagePattern, SanitizeActiveCSharpSource(blockCommentedRegistration));
-        Assert.DoesNotMatch(controllerPagePattern, SanitizeActiveCSharpSource(lineCommentedRegistration));
-        Assert.DoesNotMatch(controllerPagePattern, SanitizeActiveCSharpSource(inactiveRegistration));
-        Assert.Matches(controllerPagePattern, SanitizeActiveCSharpSource(pluginSource));
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static IEnumerable<MediaBrowser.Model.Plugins.PluginPageInfo> GetPluginPages()
+        {
+            var plugin = (Jellyfin.Plugin.NumberCover.Plugin)RuntimeHelpers.GetUninitializedObject(
+                typeof(Jellyfin.Plugin.NumberCover.Plugin));
+            return plugin.GetPages();
+        }
     }
 
     [Fact]
@@ -173,52 +132,48 @@ public class ConfigurationPageTests
         return classes?.Contains(className, StringComparer.Ordinal) == true;
     }
 
-    private static string SanitizeActiveCSharpSource(string source)
+    private static void LoadJellyfinCommonAssembly()
     {
-        return RemoveExplicitIfFalseRegions(RemoveCSharpComments(source));
-    }
-
-    private static string RemoveCSharpComments(string source)
-    {
-        return CSharpCommentOrLiteral.Replace(
-            source,
-            match => match.Groups["comment"].Success
-                ? string.Concat(match.Value.Where(character => character is '\r' or '\n'))
-                : match.Value);
-    }
-
-    private static string RemoveExplicitIfFalseRegions(string source)
-    {
-        var result = new StringBuilder(source.Length);
-        using var reader = new StringReader(source);
-        var inactiveDepth = 0;
-
-        while (reader.ReadLine() is { } line)
+        const string assemblyName = "MediaBrowser.Common";
+        if (AppDomain.CurrentDomain.GetAssemblies().Any(
+                assembly => assembly.GetName().Name == assemblyName))
         {
-            if (inactiveDepth > 0)
-            {
-                if (IfDirective.IsMatch(line))
-                {
-                    inactiveDepth++;
-                }
-                else if (EndIfDirective.IsMatch(line))
-                {
-                    inactiveDepth--;
-                }
-
-                continue;
-            }
-
-            if (ExplicitIfFalseDirective.IsMatch(line))
-            {
-                inactiveDepth = 1;
-                continue;
-            }
-
-            result.AppendLine(line);
+            return;
         }
 
-        return result.ToString();
+        var relativePackagePath = Path.Combine(
+            "jellyfin.common",
+            "10.11.11",
+            "lib",
+            "net9.0",
+            $"{assemblyName}.dll");
+        var searchedPaths = new List<string>();
+
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, ".nuget", relativePackagePath);
+            searchedPaths.Add(candidate);
+
+            if (File.Exists(candidate))
+            {
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(candidate);
+                return;
+            }
+        }
+
+        var globalCandidate = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".nuget",
+            "packages",
+            relativePackagePath);
+        searchedPaths.Add(globalCandidate);
+
+        Assert.True(
+            File.Exists(globalCandidate),
+            $"Jellyfin common assembly not found. Searched:{Environment.NewLine}{string.Join(Environment.NewLine, searchedPaths)}");
+        AssemblyLoadContext.Default.LoadFromAssemblyPath(globalCandidate);
     }
 
     private static string ReadPluginFile(params string[] relativeParts)
