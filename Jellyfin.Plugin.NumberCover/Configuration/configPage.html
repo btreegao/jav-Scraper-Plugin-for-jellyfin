@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Number Cover</title>
+</head>
+<body>
+    <div id="NumberCoverConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="NumberCoverConfigForm">
+                    <div id="NumberCoverConfigError" class="fieldDescription" role="alert" style="display: none;"></div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableJableSource" name="EnableJableSource" type="checkbox" is="emby-checkbox" />
+                            <span>Enable Jable source</span>
+                        </label>
+                        <div class="fieldDescription">This source is disabled by default. Enable it only if you choose to use it.</div>
+                    </div>
+
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="OnlyFillMissing" name="OnlyFillMissing" type="checkbox" is="emby-checkbox" />
+                            <span>Only fill missing covers</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="MaxRequestsPerMinute">Maximum requests per minute</label>
+                        <input id="MaxRequestsPerMinute" name="MaxRequestsPerMinute" type="number" is="emby-input" min="1" max="60" required="required" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="TimeoutSeconds">Timeout (seconds)</label>
+                        <input id="TimeoutSeconds" name="TimeoutSeconds" type="number" is="emby-input" min="3" max="60" required="required" />
+                    </div>
+
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">Save</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const pluginId = 'c9c7b9d7-8eab-4f1b-8bf4-5ddc3f5ae9a7';
+            const pages = document.querySelectorAll('#NumberCoverConfigPage');
+            const page = pages[pages.length - 1];
+            const form = page.querySelector('#NumberCoverConfigForm');
+            const errorMessage = page.querySelector('#NumberCoverConfigError');
+            const defaultConfig = {
+                EnableJableSource: false,
+                OnlyFillMissing: true,
+                MaxRequestsPerMinute: 12,
+                TimeoutSeconds: 10
+            };
+
+            function getConfiguration(config) {
+                return Object.assign({}, defaultConfig, config || {});
+            }
+
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+            }
+
+            function clearError() {
+                errorMessage.textContent = '';
+                errorMessage.style.display = 'none';
+            }
+
+            function loadConfiguration() {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config = getConfiguration(config);
+                    page.querySelector('#EnableJableSource').checked = config.EnableJableSource;
+                    page.querySelector('#OnlyFillMissing').checked = config.OnlyFillMissing;
+                    page.querySelector('#MaxRequestsPerMinute').value = config.MaxRequestsPerMinute;
+                    page.querySelector('#TimeoutSeconds').value = config.TimeoutSeconds;
+                    clearError();
+                }).catch(function () {
+                    showError('Unable to load configuration.');
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+
+            page.addEventListener('pageshow', loadConfiguration);
+            loadConfiguration();
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config = getConfiguration(config);
+                    config.EnableJableSource = page.querySelector('#EnableJableSource').checked;
+                    config.OnlyFillMissing = page.querySelector('#OnlyFillMissing').checked;
+                    config.MaxRequestsPerMinute = Number(page.querySelector('#MaxRequestsPerMinute').value);
+                    config.TimeoutSeconds = Number(page.querySelector('#TimeoutSeconds').value);
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    clearError();
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                }).catch(function () {
+                    showError('Unable to save configuration.');
+                }).then(function () {
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+        }());
+    </script>
+</body>
+</html>
