@@ -102,9 +102,19 @@ public class ConfigurationPageTests
             },
             selector => Assert.Contains($"page.querySelector('{selector}')", controllerSource, StringComparison.Ordinal));
         Assert.Contains("page.addEventListener('viewshow', loadConfiguration)", controllerSource, StringComparison.Ordinal);
+        Assert.Contains("async function loadConfiguration()", controllerSource, StringComparison.Ordinal);
+        Assert.Contains("form.addEventListener('submit', async function (event)", controllerSource, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(controllerSource, "finally {"));
+        Assert.Equal(2, CountOccurrences(controllerSource, "dashboard.hideLoadingMsg();"));
+        Assert.DoesNotContain(".then(function ()", controllerSource, StringComparison.Ordinal);
         Assert.Contains("apiClient.getPluginConfiguration(pluginId)", controllerSource, StringComparison.Ordinal);
         Assert.Contains("apiClient.updatePluginConfiguration(pluginId, config)", controllerSource, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\bdocument\b", controllerSource);
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        return source.Split(value, StringSplitOptions.None).Length - 1;
     }
 
     private static void AssertControl(

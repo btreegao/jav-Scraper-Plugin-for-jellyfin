@@ -35,43 +35,44 @@ export default function NumberCoverConfigController(page) {
         errorMessage.style.display = 'none';
     }
 
-    function loadConfiguration() {
+    async function loadConfiguration() {
         dashboard.showLoadingMsg();
-        return apiClient.getPluginConfiguration(pluginId).then(function (config) {
+        try {
+            let config = await apiClient.getPluginConfiguration(pluginId);
             config = withDefaults(config);
             enableJableSource.checked = config.EnableJableSource;
             onlyFillMissing.checked = config.OnlyFillMissing;
             maxRequestsPerMinute.value = config.MaxRequestsPerMinute;
             timeoutSeconds.value = config.TimeoutSeconds;
             clearError();
-        }).catch(function (error) {
+        } catch (error) {
             console.error('Number Cover configuration load failed.', error);
             showError('Unable to load configuration.');
-        }).then(function () {
+        } finally {
             dashboard.hideLoadingMsg();
-        });
+        }
     }
 
     page.addEventListener('viewshow', loadConfiguration);
 
-    form.addEventListener('submit', function (event) {
+    form.addEventListener('submit', async function (event) {
         event.preventDefault();
         dashboard.showLoadingMsg();
-        apiClient.getPluginConfiguration(pluginId).then(function (config) {
+        try {
+            let config = await apiClient.getPluginConfiguration(pluginId);
             config = withDefaults(config);
             config.EnableJableSource = enableJableSource.checked;
             config.OnlyFillMissing = onlyFillMissing.checked;
             config.MaxRequestsPerMinute = integerOrDefault(maxRequestsPerMinute.value, defaults.MaxRequestsPerMinute);
             config.TimeoutSeconds = integerOrDefault(timeoutSeconds.value, defaults.TimeoutSeconds);
-            return apiClient.updatePluginConfiguration(pluginId, config);
-        }).then(function (result) {
+            const result = await apiClient.updatePluginConfiguration(pluginId, config);
             clearError();
             dashboard.processPluginConfigurationUpdateResult(result);
-        }).catch(function (error) {
+        } catch (error) {
             console.error('Number Cover configuration save failed.', error);
             showError('Unable to save configuration.');
-        }).then(function () {
+        } finally {
             dashboard.hideLoadingMsg();
-        });
+        }
     });
 }
