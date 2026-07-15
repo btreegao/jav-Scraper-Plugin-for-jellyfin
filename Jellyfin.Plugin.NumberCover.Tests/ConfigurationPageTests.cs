@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Xunit;
 
 namespace Jellyfin.Plugin.NumberCover.Tests;
@@ -8,37 +10,77 @@ public class ConfigurationPageTests
     public void Page_uses_the_embedded_external_controller()
     {
         var html = ReadPluginFile("Configuration", "configPage.html");
+        var document = XDocument.Parse(html);
+        var configurationPage = Assert.Single(
+            document.Descendants(),
+            element => (string?)element.Attribute("id") == "NumberCoverConfigPage");
 
-        Assert.Contains("data-controller=\"__plugin/NumberCoverConfigJs\"", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("__plugin/NumberCoverConfigJs", (string?)configurationPage.Attribute("data-controller"));
+        Assert.DoesNotContain(
+            document.Descendants(),
+            element => element.Name.LocalName.Equals("script", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
     public void Jellyfin_form_components_are_declared()
     {
         var html = ReadPluginFile("Configuration", "configPage.html");
+        var document = XDocument.Parse(html);
+        var configurationPage = Assert.Single(
+            document.Descendants(),
+            element => (string?)element.Attribute("id") == "NumberCoverConfigPage");
 
-        Assert.Contains("data-require=\"emby-input,emby-button,emby-checkbox\"", html, StringComparison.Ordinal);
-        Assert.Contains("class=\"checkboxContainer checkboxContainer-withDescription\"", html, StringComparison.Ordinal);
-        Assert.Contains("type=\"checkbox\" is=\"emby-checkbox\"", html, StringComparison.Ordinal);
-        Assert.Contains("type=\"number\" is=\"emby-input\"", html, StringComparison.Ordinal);
+        Assert.Equal(
+            "emby-input,emby-button,emby-checkbox",
+            (string?)configurationPage.Attribute("data-require"));
+        Assert.Contains(
+            document.Descendants(),
+            element => HasClass(element, "checkboxContainer")
+                && HasClass(element, "checkboxContainer-withDescription"));
+
+        AssertControl(document, "input", "EnableJableSource", "checkbox", "emby-checkbox");
+        AssertControl(document, "input", "OnlyFillMissing", "checkbox", "emby-checkbox");
+        AssertControl(document, "input", "MaxRequestsPerMinute", "number", "emby-input");
+        AssertControl(document, "input", "TimeoutSeconds", "number", "emby-input");
+
+        var submitButton = Assert.Single(
+            document.Descendants(),
+            element => element.Name.LocalName == "button"
+                && (string?)element.Attribute("type") == "submit");
+        Assert.Equal("emby-button", (string?)submitButton.Attribute("is"));
     }
 
     [Fact]
     public void Plugin_registers_the_controller_resource()
     {
         var pluginSource = ReadPluginFile("Plugin.cs");
+        var controllerPagePattern = new Regex(
+            """
+            new\s+PluginPageInfo\b
+            (?=
+                (?:(?!new\s+PluginPageInfo\b|\]\s*;)[\s\S])*
+                \bName\s*=\s*"NumberCoverConfigJs"
+            )
+            (?=
+                (?:(?!new\s+PluginPageInfo\b|\]\s*;)[\s\S])*
+                Configuration\.configPage\.js
+            )
+            """,
+            RegexOptions.CultureInvariant | RegexOptions.IgnorePatternWhitespace);
 
-        Assert.Contains("Name = \"NumberCoverConfigJs\"", pluginSource, StringComparison.Ordinal);
-        Assert.Contains("Configuration.configPage.js", pluginSource, StringComparison.Ordinal);
+        Assert.Matches(controllerPagePattern, pluginSource);
     }
 
     [Fact]
     public void Project_embeds_the_controller_resource()
     {
         var projectSource = ReadPluginFile("Jellyfin.Plugin.NumberCover.csproj");
+        var project = XDocument.Parse(projectSource);
 
-        Assert.Contains("<EmbeddedResource Include=\"Configuration\\configPage.js\" />", projectSource, StringComparison.Ordinal);
+        Assert.Contains(
+            project.Descendants().Where(element => element.Name.LocalName == "EmbeddedResource"),
+            resource => ((string?)resource.Attribute("Include"))?.Replace('\\', '/')
+                == "Configuration/configPage.js");
     }
 
     [Fact]
@@ -47,28 +89,74 @@ public class ConfigurationPageTests
         var controllerSource = ReadPluginFile("Configuration", "configPage.js");
 
         Assert.Contains("export default function NumberCoverConfigController(page)", controllerSource, StringComparison.Ordinal);
-        Assert.Contains("page.querySelector('#EnableJableSource')", controllerSource, StringComparison.Ordinal);
+        Assert.All(
+            new[]
+            {
+                "#NumberCoverConfigForm",
+                "#NumberCoverConfigError",
+                "#EnableJableSource",
+                "#OnlyFillMissing",
+                "#MaxRequestsPerMinute",
+                "#TimeoutSeconds",
+            },
+            selector => Assert.Contains($"page.querySelector('{selector}')", controllerSource, StringComparison.Ordinal));
         Assert.Contains("page.addEventListener('viewshow', loadConfiguration)", controllerSource, StringComparison.Ordinal);
         Assert.Contains("apiClient.getPluginConfiguration(pluginId)", controllerSource, StringComparison.Ordinal);
         Assert.Contains("apiClient.updatePluginConfiguration(pluginId, config)", controllerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("document.getElementById(", controllerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("document.querySelector(", controllerSource, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bdocument\b", controllerSource);
+    }
+
+    private static void AssertControl(
+        XDocument document,
+        string elementName,
+        string id,
+        string type,
+        string component)
+    {
+        var control = Assert.Single(
+            document.Descendants(),
+            element => element.Name.LocalName == elementName
+                && (string?)element.Attribute("id") == id);
+
+        Assert.Equal(type, (string?)control.Attribute("type"));
+        Assert.Equal(component, (string?)control.Attribute("is"));
+    }
+
+    private static bool HasClass(XElement element, string className)
+    {
+        var classes = ((string?)element.Attribute("class"))?.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return classes?.Contains(className, StringComparer.Ordinal) == true;
     }
 
     private static string ReadPluginFile(params string[] relativeParts)
     {
-        var pathParts = new[]
-        {
-            AppContext.BaseDirectory,
-            "..",
-            "..",
-            "..",
-            "..",
-            "Jellyfin.Plugin.NumberCover",
-        }.Concat(relativeParts).ToArray();
-        var path = Path.GetFullPath(Path.Combine(pathParts));
+        var searchedPaths = new List<string>();
 
-        Assert.True(File.Exists(path), $"Plugin file not found at {path}");
-        return File.ReadAllText(path);
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            var pluginSourceRoot = Path.Combine(directory.FullName, "Jellyfin.Plugin.NumberCover");
+            var projectPath = Path.Combine(pluginSourceRoot, "Jellyfin.Plugin.NumberCover.csproj");
+            searchedPaths.Add(projectPath);
+
+            if (!File.Exists(projectPath))
+            {
+                continue;
+            }
+
+            var path = Path.GetFullPath(Path.Combine(
+                new[] { pluginSourceRoot }.Concat(relativeParts).ToArray()));
+
+            Assert.True(File.Exists(path), $"Plugin file not found at {path}");
+            return File.ReadAllText(path);
+        }
+
+        Assert.Fail(
+            $"Plugin source root not found. Searched:{Environment.NewLine}{string.Join(Environment.NewLine, searchedPaths)}");
+        return string.Empty;
     }
 }
