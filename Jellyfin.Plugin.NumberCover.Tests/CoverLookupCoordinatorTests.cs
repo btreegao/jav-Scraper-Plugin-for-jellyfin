@@ -56,6 +56,29 @@ public sealed class CoverLookupCoordinatorTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task LookupAsync_propagates_cancellation_after_jable_ignores_a_cancelled_token_without_calling_dmm()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var dmmCalls = 0;
+        var coordinator = new CoverLookupCoordinator(
+            (_, _) =>
+            {
+                cancellationSource.Cancel();
+                return Task.FromResult(CoverLookupResult.NotFound());
+            },
+            (_, _) =>
+            {
+                dmmCalls++;
+                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
+
+        Assert.Equal(0, dmmCalls);
+    }
+
     private static CoverLookupResult CreateResult(CoverLookupStatus status) => status switch
     {
         CoverLookupStatus.NotFound => CoverLookupResult.NotFound(),

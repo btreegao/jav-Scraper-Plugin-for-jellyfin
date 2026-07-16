@@ -45,9 +45,11 @@ public sealed class JableCoverLookupService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(number);
 
-        var cacheKey = CachePrefix + number;
+        cancellationToken.ThrowIfCancellationRequested();
+        var cacheKey = CachePrefix + number.Trim();
         if (_cache.TryGet(cacheKey, out var cached))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             return cached!;
         }
 
@@ -58,11 +60,13 @@ public sealed class JableCoverLookupService
             using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutSource.CancelAfter(_timeout);
             var html = await _fetchPageAsync(BuildDetailsPageUri(number), timeoutSource.Token).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             var coverUri = OpenGraphImageExtractor.TryExtract(html);
             var result = coverUri is not null && IsJableHost(coverUri)
                 ? CoverLookupResult.Success(coverUri)
                 : CoverLookupResult.NotFound();
 
+            cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(cacheKey, result);
             return result;
         }
@@ -73,12 +77,14 @@ public sealed class JableCoverLookupService
         catch (OperationCanceledException)
         {
             var result = CoverLookupResult.TemporaryFailure();
+            cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(cacheKey, result);
             return result;
         }
         catch
         {
             var result = CoverLookupResult.TemporaryFailure();
+            cancellationToken.ThrowIfCancellationRequested();
             _cache.Set(cacheKey, result);
             return result;
         }

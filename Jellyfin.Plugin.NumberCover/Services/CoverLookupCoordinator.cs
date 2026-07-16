@@ -17,7 +17,9 @@ public sealed class CoverLookupCoordinator
 
     public async Task<CoverLookupCandidate?> LookupAsync(string number, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var jableResult = await _jableLookupAsync(number, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (jableResult.Status == CoverLookupStatus.Success && jableResult.CoverUri is not null)
         {
             return new CoverLookupCandidate(jableResult.CoverUri, CoverSource.Jable);
@@ -29,6 +31,7 @@ public sealed class CoverLookupCoordinator
         }
 
         var dmmResult = await _dmmLookupAsync(number, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         return dmmResult.Status == CoverLookupStatus.Success && dmmResult.CoverUri is not null
             ? new CoverLookupCandidate(dmmResult.CoverUri, CoverSource.Dmm)
             : null;
