@@ -46,6 +46,7 @@ public sealed class DmmCoverLookupService
             var candidate = DmmImageUri.Build(number);
 
             using var response = await _fetchImageAsync(candidate, timeoutSource.Token).ConfigureAwait(false);
+            callerToken.ThrowIfCancellationRequested();
             var result = ClassifyResponse(response, candidate);
             _cache.Set(cacheKey, result);
             return result;

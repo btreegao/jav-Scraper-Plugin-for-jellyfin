@@ -77,6 +77,34 @@ public sealed class DmmCoverLookupServiceTests
         Assert.Equal(0, calls);
     }
 
+    [Fact]
+    public async Task LookupAsync_propagates_cancellation_after_fetch_and_does_not_cache_the_response()
+    {
+        var fetchStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFetch = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var service = CreateService(async (_, _) =>
+        {
+            calls++;
+            fetchStarted.TrySetResult(true);
+            await releaseFetch.Task;
+            return CreateResponse(HttpStatusCode.OK, "image/jpeg");
+        });
+        using var cancellation = new CancellationTokenSource();
+
+        var cancelledLookup = service.LookupAsync("IPZZ-034", cancellation.Token);
+        await fetchStarted.Task;
+        cancellation.Cancel();
+        releaseFetch.SetResult(true);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => cancelledLookup);
+
+        var retry = await service.LookupAsync("IPZZ-034", CancellationToken.None);
+
+        Assert.Equal(CoverLookupStatus.Success, retry.Status);
+        Assert.Equal(2, calls);
+    }
+
     private static DmmCoverLookupService CreateService(
         Func<Uri, CancellationToken, Task<HttpResponseMessage>> fetchImageAsync) =>
         new(fetchImageAsync, maxRequestsPerMinute: 60, timeoutSeconds: 10);
