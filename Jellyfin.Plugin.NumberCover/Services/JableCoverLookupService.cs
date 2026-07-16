@@ -4,6 +4,8 @@ namespace Jellyfin.Plugin.NumberCover.Services;
 
 public sealed class JableCoverLookupService
 {
+    private const string CachePrefix = "jable:";
+
     private static readonly Uri DetailsBaseUri = new("https://jable.tv/videos/");
 
     private readonly Func<Uri, CancellationToken, Task<string>> _fetchPageAsync;
@@ -16,11 +18,12 @@ public sealed class JableCoverLookupService
         int maxRequestsPerMinute,
         int timeoutSeconds,
         CoverLookupCache? cache = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        SlidingWindowRateLimiter? rateLimiter = null)
     {
         _fetchPageAsync = fetchPageAsync ?? throw new ArgumentNullException(nameof(fetchPageAsync));
         _cache = cache ?? new CoverLookupCache(timeProvider);
-        _rateLimiter = new SlidingWindowRateLimiter(maxRequestsPerMinute, timeProvider);
+        _rateLimiter = rateLimiter ?? new SlidingWindowRateLimiter(maxRequestsPerMinute, timeProvider);
         _timeout = TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 10);
     }
 
@@ -42,7 +45,8 @@ public sealed class JableCoverLookupService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(number);
 
-        if (_cache.TryGet(number, out var cached))
+        var cacheKey = CachePrefix + number;
+        if (_cache.TryGet(cacheKey, out var cached))
         {
             return cached!;
         }
@@ -59,7 +63,7 @@ public sealed class JableCoverLookupService
                 ? CoverLookupResult.Success(coverUri)
                 : CoverLookupResult.NotFound();
 
-            _cache.Set(number, result);
+            _cache.Set(cacheKey, result);
             return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -69,13 +73,13 @@ public sealed class JableCoverLookupService
         catch (OperationCanceledException)
         {
             var result = CoverLookupResult.TemporaryFailure();
-            _cache.Set(number, result);
+            _cache.Set(cacheKey, result);
             return result;
         }
         catch
         {
             var result = CoverLookupResult.TemporaryFailure();
-            _cache.Set(number, result);
+            _cache.Set(cacheKey, result);
             return result;
         }
     }
