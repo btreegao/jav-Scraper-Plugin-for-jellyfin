@@ -61,24 +61,7 @@ public sealed class DmmCoverLookupServiceTests
     }
 
     [Fact]
-    public async Task LookupAsync_propagates_pre_cancelled_caller_token()
-    {
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        var calls = 0;
-        var service = CreateService((_, _) =>
-        {
-            calls++;
-            return Task.FromResult(CreateResponse(HttpStatusCode.OK, "image/jpeg"));
-        });
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            service.LookupAsync("IPZZ-034", cancellation.Token));
-        Assert.Equal(0, calls);
-    }
-
-    [Fact]
-    public async Task LookupAsync_propagates_cancellation_after_fetch_and_does_not_cache_the_response()
+    public async Task LookupAsync_propagates_cancellation_before_and_after_fetch_without_caching()
     {
         var fetchStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFetch = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -91,10 +74,17 @@ public sealed class DmmCoverLookupServiceTests
             return CreateResponse(HttpStatusCode.OK, "image/jpeg");
         });
         using var cancellation = new CancellationTokenSource();
-
-        var cancelledLookup = service.LookupAsync("IPZZ-034", cancellation.Token);
-        await fetchStarted.Task;
         cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            service.LookupAsync("IPZZ-034", cancellation.Token));
+        Assert.Equal(0, calls);
+
+        using var fetchCancellation = new CancellationTokenSource();
+
+        var cancelledLookup = service.LookupAsync("IPZZ-034", fetchCancellation.Token);
+        await fetchStarted.Task;
+        fetchCancellation.Cancel();
         releaseFetch.SetResult(true);
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => cancelledLookup);
