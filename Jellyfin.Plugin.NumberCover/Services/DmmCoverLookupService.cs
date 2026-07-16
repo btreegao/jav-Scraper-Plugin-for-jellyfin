@@ -30,10 +30,13 @@ public sealed class DmmCoverLookupService
     public async Task<CoverLookupResult> LookupAsync(string number, CancellationToken callerToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(number);
+        callerToken.ThrowIfCancellationRequested();
 
         var cacheKey = CacheSource + number;
+        var safeIdentifier = GetSafeIdentifier(number);
         if (_cache.TryGet(cacheKey, out var cached))
         {
+            callerToken.ThrowIfCancellationRequested();
             return cached!;
         }
 
@@ -47,9 +50,8 @@ public sealed class DmmCoverLookupService
 
             using var response = await _fetchImageAsync(candidate, timeoutSource.Token).ConfigureAwait(false);
             callerToken.ThrowIfCancellationRequested();
-            var result = ClassifyResponse(response, candidate);
-            _cache.Set(cacheKey, result);
-            return result;
+            var result = ClassifyResponse(response, candidate, safeIdentifier);
+            return CacheResult(cacheKey, result, callerToken);
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
         {
@@ -57,18 +59,18 @@ public sealed class DmmCoverLookupService
         }
         catch (OperationCanceledException)
         {
-            return CacheTemporaryFailure(cacheKey, "timeout");
+            return CacheTemporaryFailure(cacheKey, safeIdentifier, "timeout", callerToken);
         }
         catch
         {
-            return CacheTemporaryFailure(cacheKey, "transport");
+            return CacheTemporaryFailure(cacheKey, safeIdentifier, "transport", callerToken);
         }
     }
 
-    private static CoverLookupResult ClassifyResponse(HttpResponseMessage response, Uri candidate)
+    private static CoverLookupResult ClassifyResponse(HttpResponseMessage response, Uri candidate, string safeIdentifier)
     {
         var status = (int)response.StatusCode;
-        Trace.WriteLine($"DMM cover lookup source=dmm identifier={Sanitize(candidate)} status={status}");
+        Trace.WriteLine($"DMM cover lookup source=dmm identifier={safeIdentifier} status={status}");
 
         if (response.StatusCode == HttpStatusCode.OK)
         {
@@ -83,15 +85,30 @@ public sealed class DmmCoverLookupService
             : CoverLookupResult.TemporaryFailure();
     }
 
-    private CoverLookupResult CacheTemporaryFailure(string cacheKey, string status)
+    private CoverLookupResult CacheResult(string cacheKey, CoverLookupResult result, CancellationToken callerToken)
     {
-        Trace.WriteLine($"DMM cover lookup source=dmm identifier={Sanitize(cacheKey[CacheSource.Length..])} status={status}");
-        var result = CoverLookupResult.TemporaryFailure();
+        callerToken.ThrowIfCancellationRequested();
         _cache.Set(cacheKey, result);
+        callerToken.ThrowIfCancellationRequested();
         return result;
     }
 
-    private static string Sanitize(Uri uri) => Sanitize(uri.AbsolutePath);
+    private CoverLookupResult CacheTemporaryFailure(
+        string cacheKey,
+        string safeIdentifier,
+        string status,
+        CancellationToken callerToken)
+    {
+        Trace.WriteLine($"DMM cover lookup source=dmm identifier={safeIdentifier} status={status}");
+        return CacheResult(cacheKey, CoverLookupResult.TemporaryFailure(), callerToken);
+    }
 
-    private static string Sanitize(string value) => value.Replace('\r', '_').Replace('\n', '_');
+    private static string GetSafeIdentifier(string number)
+    {
+        var trimmed = number.Trim();
+        var parsed = NumberParser.Parse(number);
+        return parsed is not null && string.Equals(parsed, trimmed, StringComparison.OrdinalIgnoreCase)
+            ? parsed
+            : "<invalid>";
+    }
 }
