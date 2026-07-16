@@ -88,8 +88,8 @@ public sealed class DmmCoverLookupService
     private CoverLookupResult CacheResult(string cacheKey, CoverLookupResult result, CancellationToken callerToken)
     {
         callerToken.ThrowIfCancellationRequested();
+        // The synchronous cache commit is the final cancellation boundary.
         _cache.Set(cacheKey, result);
-        callerToken.ThrowIfCancellationRequested();
         return result;
     }
 
