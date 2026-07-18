@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.NumberCover.Services;
 public static class NumberParser
 {
     private static readonly Regex NumberPattern = new(
-        @"\b(?<prefix>[A-Za-z]{2,8})[-_\s](?<number>[0-9]{2,6})(?:[Cc])?(?!-[0-9])\b",
+        @"\b(?<prefix>[A-Za-z]{2,8})[-_\s](?<number>[0-9]{2,6})(?:[Cc])?(?!-[0-9])(?=\b|_[A-Za-z])",
         RegexOptions.CultureInvariant);
 
     public static string? Parse(string? input)
