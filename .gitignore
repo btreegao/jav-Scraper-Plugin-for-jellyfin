@@ -1,4 +1,8 @@
 .worktrees/
+.dotnet/
+.dotnet-cli/
+.nuget/
+vendor/
 bin/
 obj/
 artifacts/
