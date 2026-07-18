@@ -16,7 +16,7 @@ Default settings are: online sources off, retain existing covers, combined reque
 
 ## Install and use
 
-1. Put `NumberCover-v0.1.1.zip` in one plugin folder under Jellyfin's `plugins` directory and restart Jellyfin. Do not keep duplicate Number Cover DLLs in other plugin folders.
+1. Extract `NumberCover-v0.1.1.zip` into one dedicated Number Cover folder under Jellyfin's `plugins` directory, then restart Jellyfin. Do not keep duplicate Number Cover DLLs in other plugin folders.
 2. Open **Dashboard > Plugins > Number Cover** and enable online cover sources.
 3. For one item, use **Edit images > Search**. For a batch, run a library scan or refresh.
 

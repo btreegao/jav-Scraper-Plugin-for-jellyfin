@@ -9,11 +9,19 @@ public class ProjectVersionTests
     public void Project_version_is_0_1_1()
     {
         var project = XDocument.Parse(ReadProjectFile());
-        var propertyGroup = Assert.Single(project.Descendants("PropertyGroup"));
+        var version = Assert.Single(
+            project.Descendants(),
+            element => element.Name.LocalName == "Version");
+        var assemblyVersion = Assert.Single(
+            project.Descendants(),
+            element => element.Name.LocalName == "AssemblyVersion");
+        var fileVersion = Assert.Single(
+            project.Descendants(),
+            element => element.Name.LocalName == "FileVersion");
 
-        Assert.Equal("0.1.1", (string?)propertyGroup.Element("Version"));
-        Assert.Equal("0.1.1.0", (string?)propertyGroup.Element("AssemblyVersion"));
-        Assert.Equal("0.1.1.0", (string?)propertyGroup.Element("FileVersion"));
+        Assert.Equal("0.1.1", version.Value);
+        Assert.Equal("0.1.1.0", assemblyVersion.Value);
+        Assert.Equal("0.1.1.0", fileVersion.Value);
     }
 
     private static string ReadProjectFile()
