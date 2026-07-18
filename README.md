@@ -1,22 +1,23 @@
-# Number Cover for Jellyfin
+# Number Cover 0.1.1
 
-Jellyfin 10.11.11 plugin that recognizes an identifier such as `ABC-123` in a movie name or path and, when explicitly enabled, offers a primary cover from the corresponding public Jable detail page.
+Number Cover is a Jellyfin 10.11.11 plugin that recognizes identifiers such as `IPZZ-034` in a movie name or path and finds a primary cover. Jable is tried first; the fallback is deterministic DMM/FANZA cover lookup.
 
-The source is **disabled by default**. It never downloads videos, logs in, bypasses access controls, or replaces an existing primary image when **Only fill missing covers** is enabled (the default).
+Online sources are disabled by default. The plugin does not download videos, require login, use browser cookies, or bypass access controls. Use it only where you have authorization and follow the applicable source-site terms.
 
-## Install
+## How it works
 
-1. Close/restart Jellyfin before replacing plugin files.
-2. Extract `NumberCover-v0.1.0.zip` into a new folder under Jellyfin's data `plugins` directory, for example `plugins/NumberCover_0.1.0`.
-3. Restart Jellyfin and open **Dashboard > Plugins > Number Cover**.
-4. Leave the safe defaults in place, or explicitly enable the Jable source for your personal library.
-5. Refresh metadata/images for the target movie or library and choose the provider's offered primary image.
+- `IPZZ-034` maps to `ipzz00034` and the exact DMM image URL `https://pics.dmm.co.jp/digital/video/ipzz00034/ipzz00034pl.jpg`.
+- DMM results are accepted only from the exact HTTPS host and canonical path, and only when the response is HTTP 200 with an image content type. Redirects and HTML are rejected.
+- Jable is tried first, followed by the deterministic DMM/FANZA fallback when Jable does not return a cover.
+- Not every identifier is guaranteed to have a matching cover.
+- **Only fill missing** preserves an existing primary cover.
 
-## Defaults
+Default settings are: online sources off, retain existing covers, combined request limit 12 per minute, and a 10-second timeout.
 
-- Jable source: disabled
-- Existing covers: retained
-- Request cap: 12/minute
-- Page timeout: 10 seconds
+## Install and use
 
-Only use this plugin for material you are authorized to access and in accordance with the source site's terms.
+1. Put `NumberCover-v0.1.1.zip` in one plugin folder under Jellyfin's `plugins` directory and restart Jellyfin. Do not keep duplicate Number Cover DLLs in other plugin folders.
+2. Open **Dashboard > Plugins > Number Cover** and enable online cover sources.
+3. For one item, use **Edit images > Search**. For a batch, run a library scan or refresh.
+
+Choose settings and sources only for content you are authorized to access, and comply with the source sites' terms.

@@ -8,6 +8,19 @@ namespace Jellyfin.Plugin.NumberCover.Tests;
 public class ConfigurationPageTests
 {
     [Fact]
+    public void Page_explains_Jable_first_with_automatic_DMM_fallback()
+    {
+        var html = ReadPluginFile("Configuration", "configPage.html");
+
+        Assert.Contains("Enable online cover sources", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "Jable is tried first, with automatic DMM fallback",
+            html,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Enable Jable source", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Page_uses_the_embedded_external_controller()
     {
         var html = ReadPluginFile("Configuration", "configPage.html");
