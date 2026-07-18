@@ -43,7 +43,7 @@ public class JableCoverLookupServiceTests
         });
 
         var first = await service.LookupAsync("ABC-123", CancellationToken.None);
-        var second = await service.LookupAsync(" abc-123 ", CancellationToken.None);
+        var second = await service.LookupAsync("abc-123", CancellationToken.None);
 
         Assert.Equal(CoverLookupStatus.NotFound, first.Status);
         Assert.Equal(CoverLookupStatus.NotFound, second.Status);

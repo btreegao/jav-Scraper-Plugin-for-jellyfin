@@ -34,7 +34,7 @@ public sealed class OnlineSourceCompositionTests
 
         var jableFirst = await jable.LookupAsync("IPZZ-034", CancellationToken.None);
         var dmmFirst = await dmm.LookupAsync("IPZZ-034", CancellationToken.None);
-        var jableRepeat = await jable.LookupAsync("ipzz-034", CancellationToken.None);
+        var jableRepeat = await jable.LookupAsync(" ipzz-034 ", CancellationToken.None);
         var dmmRepeat = await dmm.LookupAsync("ipzz-034", CancellationToken.None);
 
         Assert.Equal(CoverLookupStatus.NotFound, jableFirst.Status);
