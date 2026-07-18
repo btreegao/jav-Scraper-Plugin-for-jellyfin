@@ -11,20 +11,34 @@ namespace Jellyfin.Plugin.NumberCover.Providers;
 
 public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
 {
-    private static readonly HttpClient JableHttpClient = new(new SocketsHttpHandler
+    private static readonly HttpClient RemoteHttpClient = new(new SocketsHttpHandler
     {
         AllowAutoRedirect = false,
     });
 
-    private readonly JableCoverLookupService _lookupService;
+    private readonly CoverLookupCoordinator _lookupCoordinator;
 
     public JableImageProvider()
     {
         var configuration = Plugin.Instance?.Configuration ?? new Configuration.PluginConfiguration();
-        _lookupService = new JableCoverLookupService(
+        var timeProvider = TimeProvider.System;
+        var cache = new CoverLookupCache(timeProvider);
+        var rateLimiter = new SlidingWindowRateLimiter(configuration.MaxRequestsPerMinute, timeProvider);
+        var jableLookupService = new JableCoverLookupService(
             FetchPageAsync,
             configuration.MaxRequestsPerMinute,
-            configuration.TimeoutSeconds);
+            configuration.TimeoutSeconds,
+            cache,
+            timeProvider,
+            rateLimiter);
+        var dmmLookupService = new DmmCoverLookupService(
+            FetchDmmHeaderAsync,
+            configuration.MaxRequestsPerMinute,
+            configuration.TimeoutSeconds,
+            cache,
+            timeProvider,
+            rateLimiter);
+        _lookupCoordinator = new CoverLookupCoordinator(jableLookupService.LookupAsync, dmmLookupService.LookupAsync);
     }
 
     public string Name => "Number Cover (Jable)";
@@ -39,12 +53,15 @@ public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
     public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
     {
         var configuration = Plugin.Instance?.Configuration;
-        if (configuration is null || !configuration.EnableJableSource || item is not Movie)
+        if (configuration is null || item is not Movie)
         {
             return [];
         }
 
-        if (configuration.OnlyFillMissing && item.HasImage(ImageType.Primary))
+        if (!CoverLookupPolicy.ShouldLookup(
+                configuration.EnableJableSource,
+                configuration.OnlyFillMissing,
+                item.HasImage(ImageType.Primary)))
         {
             return [];
         }
@@ -55,15 +72,15 @@ public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
             return [];
         }
 
-        var result = await _lookupService.LookupAsync(number, cancellationToken).ConfigureAwait(false);
-        return result.Status == CoverLookupStatus.Success && result.CoverUri is not null
+        var candidate = await _lookupCoordinator.LookupAsync(number, cancellationToken).ConfigureAwait(false);
+        return candidate is not null
             ?
             [
                 new RemoteImageInfo
                 {
-                    ProviderName = Name,
+                    ProviderName = candidate.Source == CoverSource.Dmm ? "Number Cover (DMM fallback)" : Name,
                     Type = ImageType.Primary,
-                    Url = result.CoverUri.AbsoluteUri,
+                    Url = candidate.CoverUri.AbsoluteUri,
                 },
             ]
             : [];
@@ -71,12 +88,12 @@ public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !JableCoverLookupService.IsJableHost(uri))
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !RemoteCoverUriValidator.IsAllowed(uri))
         {
-            throw new ArgumentException("Only Jable HTTPS image URLs are allowed.", nameof(url));
+            throw new ArgumentException("Only Jable HTTPS or canonical DMM image URLs are allowed.", nameof(url));
         }
 
-        return JableHttpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return RemoteHttpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 
     private async Task<string> FetchPageAsync(Uri uri, CancellationToken cancellationToken)
@@ -86,10 +103,20 @@ public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
             throw new ArgumentException("Only Jable HTTPS detail pages are allowed.", nameof(uri));
         }
 
-        using var response = await JableHttpClient
+        using var response = await RemoteHttpClient
             .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<HttpResponseMessage> FetchDmmHeaderAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        if (!DmmImageUri.IsAllowed(uri))
+        {
+            throw new ArgumentException("Only canonical DMM image URLs are allowed.", nameof(uri));
+        }
+
+        return RemoteHttpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 }
