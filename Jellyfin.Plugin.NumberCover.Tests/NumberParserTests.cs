@@ -9,6 +9,7 @@ public class NumberParserTests
     [InlineData("[ABC-123] title", "ABC-123")]
     [InlineData("abc_001 sample", "ABC-001")]
     [InlineData("abc 001 sample", "ABC-001")]
+    [InlineData("IPZZ-034C", "IPZZ-034")]
     [InlineData("ＡＢＣ－１２３", "ABC-123")]
     public void Parse_returns_a_canonical_number_for_a_bounded_supported_format(string input, string expected)
     {
@@ -25,6 +26,7 @@ public class NumberParserTests
     [InlineData("ABC-1234567")]
     [InlineData("ABC-123X")]
     [InlineData("ABC-123-456")]
+    [InlineData("ABC-123C-456")]
     public void Parse_returns_null_for_missing_or_non_bounded_formats(string? input)
     {
         Assert.Null(NumberParser.Parse(input));
