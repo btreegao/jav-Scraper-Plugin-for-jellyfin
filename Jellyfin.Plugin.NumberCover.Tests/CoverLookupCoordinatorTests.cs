@@ -57,6 +57,32 @@ public sealed class CoverLookupCoordinatorTests
     }
 
     [Fact]
+    public async Task LookupAsync_throws_before_calling_sources_when_token_is_already_cancelled()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+        var jableCalls = 0;
+        var dmmCalls = 0;
+        var coordinator = new CoverLookupCoordinator(
+            (_, _) =>
+            {
+                jableCalls++;
+                return Task.FromResult(CoverLookupResult.NotFound());
+            },
+            (_, _) =>
+            {
+                dmmCalls++;
+                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
+
+        Assert.Equal(0, jableCalls);
+        Assert.Equal(0, dmmCalls);
+    }
+
+    [Fact]
     public async Task LookupAsync_propagates_cancellation_after_jable_ignores_a_cancelled_token_without_calling_dmm()
     {
         using var cancellationSource = new CancellationTokenSource();
@@ -77,6 +103,26 @@ public sealed class CoverLookupCoordinatorTests
             coordinator.LookupAsync("ABC-123", cancellationSource.Token));
 
         Assert.Equal(0, dmmCalls);
+    }
+
+    [Fact]
+    public async Task LookupAsync_propagates_cancellation_after_dmm_ignores_a_cancelled_token()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var dmmCalls = 0;
+        var coordinator = new CoverLookupCoordinator(
+            (_, _) => Task.FromResult(CoverLookupResult.NotFound()),
+            (_, _) =>
+            {
+                dmmCalls++;
+                cancellationSource.Cancel();
+                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
+            });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
+
+        Assert.Equal(1, dmmCalls);
     }
 
     private static CoverLookupResult CreateResult(CoverLookupStatus status) => status switch

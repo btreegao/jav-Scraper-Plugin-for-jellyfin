@@ -85,6 +85,58 @@ public sealed class OnlineSourceCompositionTests
         Assert.Equal(1, dmmCalls);
     }
 
+    [Fact]
+    public async Task Jable_cache_hit_propagates_cancellation_without_fetching_again()
+    {
+        var fetchCalls = 0;
+        var jable = new JableCoverLookupService(
+            (_, _) =>
+            {
+                fetchCalls++;
+                return Task.FromResult("<meta property='og:image' content='https://jable.tv/covers/ipzz-034.jpg'>");
+            },
+            maxRequestsPerMinute: 60,
+            timeoutSeconds: 10);
+
+        var seeded = await jable.LookupAsync("IPZZ-034", CancellationToken.None);
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            jable.LookupAsync(" ipzz-034 ", cancellationSource.Token));
+
+        Assert.Equal(CoverLookupStatus.Success, seeded.Status);
+        Assert.Equal(1, fetchCalls);
+    }
+
+    [Fact]
+    public async Task Jable_cancellation_after_a_token_ignoring_fetch_does_not_cache_the_result()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var fetchCalls = 0;
+        var jable = new JableCoverLookupService(
+            (_, _) =>
+            {
+                fetchCalls++;
+                if (fetchCalls == 1)
+                {
+                    cancellationSource.Cancel();
+                }
+
+                return Task.FromResult("<meta property='og:image' content='https://jable.tv/covers/ipzz-034.jpg'>");
+            },
+            maxRequestsPerMinute: 60,
+            timeoutSeconds: 10);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            jable.LookupAsync("IPZZ-034", cancellationSource.Token));
+
+        var retry = await jable.LookupAsync("ipzz-034", CancellationToken.None);
+
+        Assert.Equal(CoverLookupStatus.Success, retry.Status);
+        Assert.Equal(2, fetchCalls);
+    }
+
     private static HttpResponseMessage CreateImageResponse()
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
