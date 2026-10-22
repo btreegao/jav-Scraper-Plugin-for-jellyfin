@@ -8,13 +8,13 @@ namespace Jellyfin.Plugin.NumberCover.Tests;
 public class ConfigurationPageTests
 {
     [Fact]
-    public void Page_explains_Jable_first_with_automatic_DMM_fallback()
+    public void Page_explains_the_three_source_fallback_order()
     {
         var html = ReadPluginFile("Configuration", "configPage.html");
 
         Assert.Contains("Enable online cover sources", html, StringComparison.Ordinal);
         Assert.Contains(
-            "Jable is tried first, with automatic DMM fallback",
+            "Automatic fallback order: R18.dev, JavDB.com, DMM/FANZA.",
             html,
             StringComparison.Ordinal);
         Assert.DoesNotContain("Enable Jable source", html, StringComparison.Ordinal);

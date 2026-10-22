@@ -4,36 +4,36 @@ namespace Jellyfin.Plugin.NumberCover.Services;
 
 public sealed class CoverLookupCoordinator
 {
-    private readonly Func<string, CancellationToken, Task<CoverLookupResult>> _jableLookupAsync;
-    private readonly Func<string, CancellationToken, Task<CoverLookupResult>> _dmmLookupAsync;
+    private readonly (CoverSource Source, Func<string, CancellationToken, Task<CoverLookupResult>> Lookup)[] _sources;
 
     public CoverLookupCoordinator(
-        Func<string, CancellationToken, Task<CoverLookupResult>> jableLookupAsync,
+        Func<string, CancellationToken, Task<CoverLookupResult>> r18LookupAsync,
+        Func<string, CancellationToken, Task<CoverLookupResult>> javDbLookupAsync,
         Func<string, CancellationToken, Task<CoverLookupResult>> dmmLookupAsync)
     {
-        _jableLookupAsync = jableLookupAsync ?? throw new ArgumentNullException(nameof(jableLookupAsync));
-        _dmmLookupAsync = dmmLookupAsync ?? throw new ArgumentNullException(nameof(dmmLookupAsync));
+        ArgumentNullException.ThrowIfNull(r18LookupAsync);
+        ArgumentNullException.ThrowIfNull(javDbLookupAsync);
+        ArgumentNullException.ThrowIfNull(dmmLookupAsync);
+        _sources =
+        [
+            (CoverSource.R18, r18LookupAsync),
+            (CoverSource.JavDb, javDbLookupAsync),
+            (CoverSource.Dmm, dmmLookupAsync),
+        ];
     }
 
     public async Task<CoverLookupCandidate?> LookupAsync(string number, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var jableResult = await _jableLookupAsync(number, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (jableResult.Status == CoverLookupStatus.Success && jableResult.CoverUri is not null)
+        foreach (var (source, lookup) in _sources)
         {
-            return new CoverLookupCandidate(jableResult.CoverUri, CoverSource.Jable);
+            var result = await lookup(number, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result.Status == CoverLookupStatus.Success && result.CoverUri is not null)
+            {
+                return new CoverLookupCandidate(result.CoverUri, source);
+            }
         }
-
-        if (jableResult.Status is not (CoverLookupStatus.NotFound or CoverLookupStatus.TemporaryFailure))
-        {
-            return null;
-        }
-
-        var dmmResult = await _dmmLookupAsync(number, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        return dmmResult.Status == CoverLookupStatus.Success && dmmResult.CoverUri is not null
-            ? new CoverLookupCandidate(dmmResult.CoverUri, CoverSource.Dmm)
-            : null;
+        return null;
     }
 }

@@ -6,129 +6,73 @@ namespace Jellyfin.Plugin.NumberCover.Tests;
 
 public sealed class CoverLookupCoordinatorTests
 {
-    [Fact]
-    public async Task LookupAsync_returns_the_jable_candidate_without_calling_dmm_when_jable_succeeds()
+    [Theory]
+    [InlineData(0, false, "r18")]
+    [InlineData(1, false, "r18,javdb")]
+    [InlineData(2, false, "r18,javdb,dmm")]
+    [InlineData(-1, false, "r18,javdb,dmm")]
+    [InlineData(1, true, "r18,javdb")]
+    [InlineData(2, true, "r18,javdb,dmm")]
+    [InlineData(-1, true, "r18,javdb,dmm")]
+    public async Task Lookup_uses_R18_then_JavDb_then_Dmm_and_stops_at_first_success(int successIndex, bool temporaryFailure, string expectedCalls)
     {
-        var dmmCalls = 0;
-        var jableUri = new Uri("https://jable.tv/covers/abc-123.jpg");
+        var calls = new List<string>();
+        var sources = new[] { CoverSource.R18, CoverSource.JavDb, CoverSource.Dmm };
+        var uri = new Uri("https://pics.dmm.co.jp/digital/video/ipzz00034/ipzz00034pl.jpg");
+        Task<CoverLookupResult> Lookup(int index, string name)
+        {
+            calls.Add(name);
+            return Task.FromResult(index == successIndex ? CoverLookupResult.Success(uri)
+                : temporaryFailure ? CoverLookupResult.TemporaryFailure() : CoverLookupResult.NotFound());
+        }
         var coordinator = new CoverLookupCoordinator(
-            (_, _) => Task.FromResult(CoverLookupResult.Success(jableUri)),
-            (_, _) =>
-            {
-                dmmCalls++;
-                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
-            });
+            (_, _) => Lookup(0, "r18"), (_, _) => Lookup(1, "javdb"), (_, _) => Lookup(2, "dmm"));
 
-        var result = await coordinator.LookupAsync("ABC-123", CancellationToken.None);
+        var result = await coordinator.LookupAsync("IPZZ-034", CancellationToken.None);
 
-        Assert.NotNull(result);
-        Assert.Equal(jableUri, result.CoverUri);
-        Assert.Equal(CoverSource.Jable, result.Source);
-        Assert.Equal(0, dmmCalls);
+        Assert.Equal(expectedCalls, string.Join(',', calls));
+        if (successIndex < 0) Assert.Null(result);
+        else
+        {
+            Assert.NotNull(result);
+            Assert.Equal(sources[successIndex], result.Source);
+            Assert.Equal(uri, result.CoverUri);
+        }
+    }
+
+    [Fact]
+    public async Task Cancelled_lookup_does_not_call_any_source()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var calls = 0;
+        Task<CoverLookupResult> Lookup(string _, CancellationToken __)
+        {
+            calls++;
+            return Task.FromResult(CoverLookupResult.NotFound());
+        }
+        var coordinator = new CoverLookupCoordinator(Lookup, Lookup, Lookup);
+        await Assert.ThrowsAsync<OperationCanceledException>(() => coordinator.LookupAsync("IPZZ-034", cts.Token));
+        Assert.Equal(0, calls);
     }
 
     [Theory]
-    [InlineData(CoverLookupStatus.NotFound)]
-    [InlineData(CoverLookupStatus.TemporaryFailure)]
-    public async Task LookupAsync_falls_back_to_dmm_when_jable_does_not_succeed(CoverLookupStatus jableStatus)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Cancellation_after_any_source_is_propagated_and_stops_fallback(int cancelledIndex)
     {
-        var dmmUri = new Uri("https://pics.dmm.co.jp/dmm.jpg");
+        using var cts = new CancellationTokenSource();
+        var calls = 0;
+        Task<CoverLookupResult> Lookup(int index)
+        {
+            calls++;
+            if (index == cancelledIndex) cts.Cancel();
+            return Task.FromResult(CoverLookupResult.NotFound());
+        }
         var coordinator = new CoverLookupCoordinator(
-            (_, _) => Task.FromResult(CreateResult(jableStatus)),
-            (_, _) => Task.FromResult(CoverLookupResult.Success(dmmUri)));
-
-        var result = await coordinator.LookupAsync("ABC-123", CancellationToken.None);
-
-        Assert.NotNull(result);
-        Assert.Equal(dmmUri, result.CoverUri);
-        Assert.Equal(CoverSource.Dmm, result.Source);
+            (_, _) => Lookup(0), (_, _) => Lookup(1), (_, _) => Lookup(2));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => coordinator.LookupAsync("IPZZ-034", cts.Token));
+        Assert.Equal(cancelledIndex + 1, calls);
     }
-
-    [Fact]
-    public async Task LookupAsync_returns_null_when_neither_source_succeeds()
-    {
-        var coordinator = new CoverLookupCoordinator(
-            (_, _) => Task.FromResult(CoverLookupResult.NotFound()),
-            (_, _) => Task.FromResult(CoverLookupResult.TemporaryFailure()));
-
-        var result = await coordinator.LookupAsync("ABC-123", CancellationToken.None);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task LookupAsync_throws_before_calling_sources_when_token_is_already_cancelled()
-    {
-        using var cancellationSource = new CancellationTokenSource();
-        cancellationSource.Cancel();
-        var jableCalls = 0;
-        var dmmCalls = 0;
-        var coordinator = new CoverLookupCoordinator(
-            (_, _) =>
-            {
-                jableCalls++;
-                return Task.FromResult(CoverLookupResult.NotFound());
-            },
-            (_, _) =>
-            {
-                dmmCalls++;
-                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
-            });
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
-
-        Assert.Equal(0, jableCalls);
-        Assert.Equal(0, dmmCalls);
-    }
-
-    [Fact]
-    public async Task LookupAsync_propagates_cancellation_after_jable_ignores_a_cancelled_token_without_calling_dmm()
-    {
-        using var cancellationSource = new CancellationTokenSource();
-        var dmmCalls = 0;
-        var coordinator = new CoverLookupCoordinator(
-            (_, _) =>
-            {
-                cancellationSource.Cancel();
-                return Task.FromResult(CoverLookupResult.NotFound());
-            },
-            (_, _) =>
-            {
-                dmmCalls++;
-                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
-            });
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
-
-        Assert.Equal(0, dmmCalls);
-    }
-
-    [Fact]
-    public async Task LookupAsync_propagates_cancellation_after_dmm_ignores_a_cancelled_token()
-    {
-        using var cancellationSource = new CancellationTokenSource();
-        var dmmCalls = 0;
-        var coordinator = new CoverLookupCoordinator(
-            (_, _) => Task.FromResult(CoverLookupResult.NotFound()),
-            (_, _) =>
-            {
-                dmmCalls++;
-                cancellationSource.Cancel();
-                return Task.FromResult(CoverLookupResult.Success(new Uri("https://pics.dmm.co.jp/dmm.jpg")));
-            });
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            coordinator.LookupAsync("ABC-123", cancellationSource.Token));
-
-        Assert.Equal(1, dmmCalls);
-    }
-
-    private static CoverLookupResult CreateResult(CoverLookupStatus status) => status switch
-    {
-        CoverLookupStatus.NotFound => CoverLookupResult.NotFound(),
-        CoverLookupStatus.TemporaryFailure => CoverLookupResult.TemporaryFailure(),
-        _ => throw new ArgumentOutOfRangeException(nameof(status)),
-    };
 }
