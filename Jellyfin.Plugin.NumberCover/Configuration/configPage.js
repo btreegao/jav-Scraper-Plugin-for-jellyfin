@@ -1,7 +1,7 @@
 const pluginId = 'c9c7b9d7-8eab-4f1b-8bf4-5ddc3f5ae9a7';
 const defaults = {
-    EnableJableSource: false,
-    OnlyFillMissing: true,
+    EnableJableSource: true,
+    OnlyFillMissing: false,
     MaxRequestsPerMinute: 12,
     TimeoutSeconds: 10
 };
@@ -24,6 +24,9 @@ export default function NumberCoverConfigController(page) {
     const onlyFillMissing = page.querySelector('#OnlyFillMissing');
     const maxRequestsPerMinute = page.querySelector('#MaxRequestsPerMinute');
     const timeoutSeconds = page.querySelector('#TimeoutSeconds');
+    const saveButton = form.querySelector('button[type="submit"]');
+    let configurationLoaded = false;
+    saveButton.disabled = true;
 
     function showError(message) {
         errorMessage.textContent = message;
@@ -36,6 +39,8 @@ export default function NumberCoverConfigController(page) {
     }
 
     async function loadConfiguration() {
+        configurationLoaded = false;
+        saveButton.disabled = true;
         dashboard.showLoadingMsg();
         try {
             let config = await apiClient.getPluginConfiguration(pluginId);
@@ -44,6 +49,8 @@ export default function NumberCoverConfigController(page) {
             onlyFillMissing.checked = config.OnlyFillMissing;
             maxRequestsPerMinute.value = config.MaxRequestsPerMinute;
             timeoutSeconds.value = config.TimeoutSeconds;
+            configurationLoaded = true;
+            saveButton.disabled = false;
             clearError();
         } catch (error) {
             console.error('Number Cover configuration load failed.', error);
@@ -57,6 +64,10 @@ export default function NumberCoverConfigController(page) {
 
     form.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (!configurationLoaded) {
+            showError('Wait for the configuration to load before saving.');
+            return;
+        }
         dashboard.showLoadingMsg();
         try {
             let config = await apiClient.getPluginConfiguration(pluginId);

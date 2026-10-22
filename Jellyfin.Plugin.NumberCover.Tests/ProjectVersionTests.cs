@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.NumberCover.Tests;
 public class ProjectVersionTests
 {
     [Fact]
-    public void Project_version_is_0_2_1()
+    public void Project_version_is_0_2_2()
     {
         var project = XDocument.Parse(ReadProjectFile());
         var version = Assert.Single(
@@ -19,9 +19,9 @@ public class ProjectVersionTests
             project.Descendants(),
             element => element.Name.LocalName == "FileVersion");
 
-        Assert.Equal("0.2.1", version.Value);
-        Assert.Equal("0.2.1.0", assemblyVersion.Value);
-        Assert.Equal("0.2.1.0", fileVersion.Value);
+        Assert.Equal("0.2.2", version.Value);
+        Assert.Equal("0.2.2.0", assemblyVersion.Value);
+        Assert.Equal("0.2.2.0", fileVersion.Value);
     }
 
     private static string ReadProjectFile()

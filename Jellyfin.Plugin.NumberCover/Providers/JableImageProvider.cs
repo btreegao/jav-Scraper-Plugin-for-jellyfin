@@ -114,7 +114,7 @@ public sealed class JableImageProvider : IRemoteImageProvider, IHasOrder
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("NumberCover/0.2.1 (+https://github.com/btreegao/jav-Scraper-Plugin-for-jellyfin)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("NumberCover/0.2.2 (+https://github.com/btreegao/jav-Scraper-Plugin-for-jellyfin)");
         return client;
     }
 
